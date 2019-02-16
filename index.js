@@ -42,7 +42,7 @@ class ServerlessPlugin {
         return Promise.all(fixtures.map(fixtureConfig => this.loadFixture(fixtureConfig)));
     }
 
-    loadFixture(fixtureConfig) {
+    async loadFixture(fixtureConfig) {
         if (!this.isEnabled(fixtureConfig)) {
             this.serverless.cli.log('Ignoring disabled fixtures');
             return Promise.resolve();
@@ -64,7 +64,10 @@ class ServerlessPlugin {
 
         if (fixtureConfig.clearTable) {
             this.serverless.cli.log(`Clearing table ${fixtureConfig.table}`);
-            this.performClearTable(fixtureConfig.table)
+            this.serverless.cli.log(fixtureConfig.tableKeys);
+            // await this.performClearTable.bind(this, this.dynamoFunctions.scan, this.dynamoFunctions.delete, fixtureConfig.table)
+            await performClearTable(this.dynamoFunctions.scan, this.dynamoFunctions.delete, fixtureConfig.table, fixtureConfig.tableKeys)
+            // this.performClearTable(fixtureConfig.table)
         }
 
         this.serverless.cli.log(`Loading fixtures for table ${fixtureConfig.table}`);
@@ -111,6 +114,8 @@ class ServerlessPlugin {
         return {
             doc: doc.batchWrite.bind(doc),
             raw: raw.batchWriteItem.bind(raw),
+            delete: doc.delete.bind(doc),
+            scan: doc.scan.bind(doc)
         };
     }
 
@@ -225,34 +230,37 @@ class ServerlessPlugin {
 
         return result;
     }
+}
 
-    async performClearTable(tableName) {
-        let documentClient = new DynamoDB.DocumentClient()
-        documentClient.scan({
-            TableName : tableName
+async function performClearTable(dynamodbScanFunction, dynamodbDeleteFunction, tableName, keys) {
+    return new Promise(function(resolve, reject) {
+        console.log(`Scanning ${tableName}`)
+        dynamodbScanFunction({
+            TableName : tableName,
+            AttributesToGet: keys
         }).promise()
         .then((result) => {
-            console.log(`# of items: ${result.Items.length}`)
+            // console.log(`# of items: ${result.Items.length}`)
 
             return Promise.all(result.Items.map(async (item) => {
-                const ddd = {
+                const deletionCandidates = {
                     TableName: tableName,
                     Key: {},
                     ReturnValues: 'NONE'
                 }
-                forEach(keys, (aKey) => {
-                    ddd.Key[aKey] = item[aKey]
-                })
-                // console.log(ddd)
+                for (const aKey of keys) {
+                    deletionCandidates.Key[aKey] = item[aKey]
+                }
 
-                // return documentClient.delete(ddd).promise()
-                return Promise.resolve()
+                await dynamodbDeleteFunction(deletionCandidates).promise()
+                resolve()
             }))
         })
         .catch((err) => {
-            return Promise.resolve(err)
+            reject(err)
         })
-    }
+    })
 }
+
 
 module.exports = ServerlessPlugin;
