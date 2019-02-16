@@ -62,6 +62,11 @@ class ServerlessPlugin {
             return Promise.resolve();
         }
 
+        if (fixtureConfig.clearTable) {
+            this.serverless.cli.log(`Clearing table ${fixtureConfig.table}`);
+            this.performClearTable(fixtureConfig.table)
+        }
+
         this.serverless.cli.log(`Loading fixtures for table ${fixtureConfig.table}`);
 
         const concurrentWrites = fixtureConfig.concurrentWrites || CONCURRENT_WRITES;
@@ -219,6 +224,34 @@ class ServerlessPlugin {
         }
 
         return result;
+    }
+
+    async performClearTable(tableName) {
+        let documentClient = new DynamoDB.DocumentClient()
+        documentClient.scan({
+            TableName : tableName
+        }).promise()
+        .then((result) => {
+            console.log(`# of items: ${result.Items.length}`)
+
+            return Promise.all(result.Items.map(async (item) => {
+                const ddd = {
+                    TableName: tableName,
+                    Key: {},
+                    ReturnValues: 'NONE'
+                }
+                forEach(keys, (aKey) => {
+                    ddd.Key[aKey] = item[aKey]
+                })
+                // console.log(ddd)
+
+                // return documentClient.delete(ddd).promise()
+                return Promise.resolve()
+            }))
+        })
+        .catch((err) => {
+            return Promise.resolve(err)
+        })
     }
 }
 
